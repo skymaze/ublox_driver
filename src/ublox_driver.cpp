@@ -113,11 +113,11 @@ int main(int argc, char **argv)
     sigaction(SIGINT, &sigIntHandler, NULL);
     // procmgr_ability( 0, PROCMGR_AID_CLOCKSET );
 
-    node->declare_parameter("config_file", "");
-    std::string config_filepath = node ->get_parameter("my_parameter").get_parameter_value().get<std::string>();
     // config_filepath = argv[1];
     ParameterManager &pm(ParameterManager::getInstance());
-    pm.read_parameter(config_filepath);
+    pm.read_parameter(node);
+
+    RCLCPP_INFO(node->get_logger(), "Parameters read success");
 
     std::shared_ptr<SerialHandler> serial;
     std::shared_ptr<SocketHandler> socket;
@@ -141,13 +141,12 @@ int main(int argc, char **argv)
     if (pm.online)
     {
         serial.reset(new SerialHandler(pm.input_serial_port, pm.serial_baud_rate));
-
         if (pm.config_receiver_at_start)
         {
             if (config_receiver(serial, pm.receiver_configs))
-                LOG(ERROR) << "Successfully configured the receiver.";
+                RCLCPP_INFO(node->get_logger(), "Successfully configured the receiver.");
             else
-                LOG(FATAL) << "Error occurs when configuring the receiver.";
+                RCLCPP_ERROR(node->get_logger(), "Error occurs when configuring the receiver.");
         }
         
         if (pm.input_rtcm)
@@ -158,17 +157,19 @@ int main(int argc, char **argv)
             socket->startRead();
         }
         
-        if (pm.to_ros)
+        if (pm.to_ros) {
             serial->addCallback(std::bind(&UbloxMessageProcessor::process_data, 
                 ublox_msg_processor.get(), std::placeholders::_1, std::placeholders::_2));
-            
-        if (pm.to_file)
+        }
+        if (pm.to_file) {
             serial->addCallback(std::bind(&FileDumper::process_data, file_dumper.get(), 
                 std::placeholders::_1, std::placeholders::_2));
+        }
         
-        if (pm.to_serial)
+        if (pm.to_serial) {
             serial->addCallback(std::bind(&SerialHandler::writeRaw, output_serial.get(), 
                 std::placeholders::_1, std::placeholders::_2, pm.IO_TIMEOUT_MS));
+        }
 
         serial->startRead();
     }

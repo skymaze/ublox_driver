@@ -50,4 +50,16 @@ ament_export_dependencies(ament_cmake)
 ament_export_dependencies(std_msgs)
 ament_export_include_directories(${INCLUDE_DIRS})
 
+install(TARGETS
+  ${PROJECT_NAME}
+  sync_system_time
+  DESTINATION lib/${PROJECT_NAME})
+
+# Install launch files.
+install(DIRECTORY
+  launch
+  config
+  DESTINATION share/${PROJECT_NAME}/
+)
+
 ament_package()

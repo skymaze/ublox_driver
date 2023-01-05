@@ -25,6 +25,7 @@
 #include <fstream>
 #include <glog/logging.h>
 #include <eigen3/Eigen/Dense>
+#include "rclcpp/rclcpp.hpp"
 
 #include "yaml/Yaml.hpp"
 
@@ -38,32 +39,11 @@ class ParameterManager
         ParameterManager(const ParameterManager&);
         ParameterManager& operator=(const ParameterManager&);
 
-        std::vector<double> parse_list(std::string list_str)
-        {
-            std::vector<double> result;
-            size_t data_start = list_str.find_first_not_of("[ ");
-            list_str = list_str.substr(data_start);
-            size_t data_ends = list_str.find_last_not_of("] ");
-            list_str.resize(data_ends+1);
-
-            std::stringstream ss(list_str);
-            std::string line;
-            while(std::getline(ss, line, ','))
-            {
-                result.emplace_back(std::stod(line));
-            }
-
-            return result;
-        }
-
-        Eigen::MatrixXd parse_matrix(Yaml::Node &matrix_node)
+        Eigen::MatrixXd parse_matrix(int &rows, int &cols, std::vector<double> &matrix_data)
         {
             Eigen::MatrixXd result;
-            int rows = matrix_node["rows"].As<int>();
-            int cols = matrix_node["cols"].As<int>();
             assert(rows > 0 && cols > 0);
             result.resize(rows, cols);
-            std::vector<double> matrix_data = parse_list(matrix_node["data"].As<std::string>());
             assert(matrix_data.size() == static_cast<size_t>(rows*cols));
             for (int i = 0; i < rows; ++i)
                 for (int j = 0; j < cols; ++j)
@@ -90,35 +70,55 @@ class ParameterManager
             return instance;
         }
 
-        void read_parameter(const std::string &driver_config_file)
+        void read_parameter(rclcpp::Node::SharedPtr & node)
         {
-            Yaml::Node driver_config_root;
-            Yaml::Parse(driver_config_root, driver_config_file.c_str());
-            online = driver_config_root["online"].As<int>() > 0 ? true : false;
-            input_rtcm = driver_config_root["input_rtcm"].As<int>() > 0 ? true : false;
-            to_ros = driver_config_root["to_ros"].As<int>() > 0 ? true : false;
-            to_file = driver_config_root["to_file"].As<int>() > 0 ? true : false;
-            to_serial = driver_config_root["to_serial"].As<int>() > 0 ? true : false;
-            config_receiver_at_start = driver_config_root["config_receiver_at_start"].As<int>() > 0 ? true : false;
+            node->declare_parameter("online", true);
+            online = node->get_parameter("online").get_parameter_value().get<bool>();
+            node->declare_parameter("input_rtcm", false);
+            input_rtcm = node->get_parameter("input_rtcm").get_parameter_value().get<bool>();
+            node->declare_parameter("to_ros", true);
+            to_ros = node->get_parameter("to_ros").get_parameter_value().get<bool>();
+            node->declare_parameter("to_file", false);
+            to_file = node->get_parameter("to_file").get_parameter_value().get<bool>();
+            node->declare_parameter("to_serial", false);
+            to_serial = node->get_parameter("to_serial").get_parameter_value().get<bool>();
+            node->declare_parameter("config_receiver_at_start", false);
+            config_receiver_at_start = node->get_parameter("config_receiver_at_start").get_parameter_value().get<bool>();
+
             if (online)
             {
-                input_serial_port = driver_config_root["input_serial_port"].As<std::string>();
-                serial_baud_rate = driver_config_root["serial_baud_rate"].As<long>();
-                rtcm_tcp_port = driver_config_root["rtcm_tcp_port"].As<uint64_t>();
+                node->declare_parameter("input_serial_port", "/dev/ttyACM0");
+                input_serial_port = node->get_parameter("input_serial_port").get_parameter_value().get<std::string>();
+                node->declare_parameter("serial_baud_rate", 921600);
+                serial_baud_rate = node->get_parameter("serial_baud_rate").get_parameter_value().get<long>();
+                node->declare_parameter("rtcm_tcp_port", 3503);
+                rtcm_tcp_port = node->get_parameter("rtcm_tcp_port").get_parameter_value().get<uint64_t>();
             }
             else
             {
-                ubx_filepath = path_rel2abs(driver_config_root["ubx_filepath"].As<std::string>());
+                node->declare_parameter("ubx_filepath", "~/tmp/ublox_driver_test/test.ubx");
+                ubx_filepath = node->get_parameter("ubx_filepath").get_parameter_value().get<std::string>();
             }
-            if (to_serial)
-                output_serial_port = driver_config_root["output_serial_port"].As<std::string>();
-            if (to_file)
-                dump_dir = path_rel2abs(driver_config_root["dump_dir"].As<std::string>());
-            rtk_correction_ecef = parse_matrix(driver_config_root["rtk_correction_ecef"]).topLeftCorner<3, 1>();
+            if (to_serial) {
+                node->declare_parameter("output_serial_port", "/dev/ttyACM0");
+                output_serial_port = node->get_parameter("output_serial_port").get_parameter_value().get<std::string>();
+            }
+            if (to_file) {
+                node->declare_parameter("dump_dir", "~/tmp/ublox_driver_test/");
+                dump_dir = node->get_parameter("dump_dir").get_parameter_value().get<std::string>();
+            }
+
+            node->declare_parameter("rtk_correction_ecef", std::vector<double>({0.0, 0.0, 0.0}));
+            std::vector<double> matrix_data = node->get_parameter("rtk_correction_ecef").get_parameter_value().get<std::vector<double>>();
+            assert(matrix_data.size() == 3);
+            rtk_correction_ecef[0] = matrix_data[0];
+            rtk_correction_ecef[1] = matrix_data[1];
+            rtk_correction_ecef[2] = matrix_data[2];
+
             if (online && config_receiver_at_start)
             {
-                std::string rcv_config_filepath = path_rel2abs(driver_config_root[
-                    "receiver_config_filepath"].As<std::string>());
+                node->declare_parameter("receiver_config_filepath", "~/ros2_ws/src/ublox_driver/config/ublox_rcv_config.yaml");
+                std::string rcv_config_filepath = node->get_parameter("receiver_config_filepath").get_parameter_value().get<std::string>();
                 if (!rcv_config_filepath.empty())
                 {
                     Yaml::Node rcv_config_root;
