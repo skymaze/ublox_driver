@@ -42,7 +42,7 @@ SocketHandler::SocketHandler(const std::string &host, uint64_t port, unsigned in
         std::cerr << "Cannot open socket " << host << ':' << port << '\n';
         return;
     }
-    boost::thread bt(boost::bind(&boost::asio::io_service::run, &io_service_));
+    std::thread bt(boost::bind(&boost::asio::io_service::run, &io_service_));
 }
 
 SocketHandler::~SocketHandler()

@@ -30,7 +30,7 @@ SerialHandler::SerialHandler(std::string port, unsigned int baud_rate, unsigned 
         std::cerr << "Cannot open serial port " << port << ".\n";
         return;
     }
-    boost::thread bt(boost::bind(&boost::asio::io_service::run, &io_service_));
+    std::thread bt(boost::bind(&boost::asio::io_service::run, &io_service_));
 }
 
 SerialHandler::~SerialHandler()

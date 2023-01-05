@@ -34,17 +34,17 @@
 constexpr double UbloxMessageProcessor::lam_carr[];
 constexpr unsigned int UbloxMessageProcessor::tbl_CRC24Q[];
 
-UbloxMessageProcessor::UbloxMessageProcessor(ros::NodeHandle& nh) : 
-    nh_(nh),
+UbloxMessageProcessor::UbloxMessageProcessor(rclcpp::Node::SharedPtr & node) : 
+    node_(node),
     MSG_HEADER_LEN(ParameterManager::getInstance().MSG_HEADER_LEN)
 {
-    pub_pvt_ = nh_.advertise<GnssPVTSolnMsg>("receiver_pvt", 100);
-    pub_lla_ = nh_.advertise<sensor_msgs::NavSatFix>("receiver_lla", 100);
-    pub_tp_info_ = nh_.advertise<GnssTimePulseInfoMsg>("time_pulse_info", 100);
-    pub_range_meas_ = nh_.advertise<GnssMeasMsg>("range_meas", 100);
-    pub_ephem_ = nh_.advertise<GnssEphemMsg>("ephem", 100);
-    pub_glo_ephem_ = nh_.advertise<GnssGloEphemMsg>("glo_ephem", 100);
-    pub_iono_ = nh_.advertise<StampedFloat64Array>("iono_params", 100);
+    pub_pvt_ = node->create_publisher<gnss_interfaces::msg::GnssPVTSolnMsg>("receiver_pvt", 100);
+    pub_lla_ = node->create_publisher<sensor_msgs::msg::NavSatFix>("receiver_lla", 100);
+    pub_tp_info_ = node->create_publisher<gnss_interfaces::msg::GnssTimePulseInfoMsg>("time_pulse_info", 100);
+    pub_range_meas_ = node->create_publisher<gnss_interfaces::msg::GnssMeasMsg>("range_meas", 100);
+    pub_ephem_ = node->create_publisher<gnss_interfaces::msg::GnssEphemMsg>("ephem", 100);
+    pub_glo_ephem_ = node->create_publisher<gnss_interfaces::msg::GnssGloEphemMsg>("glo_ephem", 100);
+    pub_iono_ = node->create_publisher<gnss_interfaces::msg::StampedFloat64Array>("iono_params", 100);
 }
 
 void UbloxMessageProcessor::process_data(const uint8_t *data, size_t len)
@@ -58,8 +58,8 @@ void UbloxMessageProcessor::process_data(const uint8_t *data, size_t len)
     {
         std::vector<ObsPtr> meas = parse_meas_msg(data, len);
         if (meas.empty())   return;
-        GnssMeasMsg meas_msg = meas2msg(meas);
-        pub_range_meas_.publish(meas_msg);
+        gnss_interfaces::msg::GnssMeasMsg meas_msg = meas2msg(meas);
+        pub_range_meas_->publish(meas_msg);
         return;
     }
     else if (msg_type == UBX_RXMSFRBX_ID)
@@ -70,23 +70,23 @@ void UbloxMessageProcessor::process_data(const uint8_t *data, size_t len)
         {
             if (satsys(ephem->sat, NULL) == SYS_GLO)
             {
-                GnssGloEphemMsg glo_ephem_msg = glo_ephem2msg(std::dynamic_pointer_cast<GloEphem>(ephem));
-                pub_glo_ephem_.publish(glo_ephem_msg);
+                gnss_interfaces::msg::GnssGloEphemMsg glo_ephem_msg = glo_ephem2msg(std::dynamic_pointer_cast<GloEphem>(ephem));
+                pub_glo_ephem_->publish(glo_ephem_msg);
             }
             else
             {
-                GnssEphemMsg ephem_msg = ephem2msg(std::dynamic_pointer_cast<Ephem>(ephem));
-                pub_ephem_.publish(ephem_msg);
+                gnss_interfaces::msg::GnssEphemMsg ephem_msg = ephem2msg(std::dynamic_pointer_cast<Ephem>(ephem));
+                pub_ephem_->publish(ephem_msg);
             }
         }
         if (iono_params.size() == 8)
         {
             // publish ionosphere parameters
-            StampedFloat64Array iono_msg;
+            gnss_interfaces::msg::StampedFloat64Array iono_msg;
             if (ephem && ephem->ttr.time!=0)
-                iono_msg.header.stamp = ros::Time(time2sec(ephem->ttr));
+                iono_msg.header.stamp = rclcpp::Time(time2sec(ephem->ttr));
             std::copy(iono_params.begin(), iono_params.end(), std::back_inserter(iono_msg.data));
-            pub_iono_.publish(iono_msg);
+            pub_iono_->publish(iono_msg);
         }
         return;
     }
@@ -95,8 +95,8 @@ void UbloxMessageProcessor::process_data(const uint8_t *data, size_t len)
         TimePulseInfoPtr tp_info = parse_time_pulse(data, len);
         if (tp_info && tp_info->time.time != 0)
         {
-            GnssTimePulseInfoMsg tp_info_msg = tp_info2msg(tp_info);
-            pub_tp_info_.publish(tp_info_msg);
+            gnss_interfaces::msg::GnssTimePulseInfoMsg tp_info_msg = tp_info2msg(tp_info);
+            pub_tp_info_->publish(tp_info_msg);
         }
         return;
     }
@@ -117,17 +117,17 @@ void UbloxMessageProcessor::process_data(const uint8_t *data, size_t len)
             pvt_soln->hgt = pvt_lla.z();
         }
 
-        GnssPVTSolnMsg pvt_msg = pvt2msg(pvt_soln);
-        pub_pvt_.publish(pvt_msg);
+        gnss_interfaces::msg::GnssPVTSolnMsg pvt_msg = pvt2msg(pvt_soln);
+        pub_pvt_->publish(pvt_msg);
 
-        sensor_msgs::NavSatFix lla_msg;
-        lla_msg.header.stamp = ros::Time(time2sec(pvt_soln->time));
+        sensor_msgs::msg::NavSatFix lla_msg;
+        lla_msg.header.stamp = rclcpp::Time(time2sec(pvt_soln->time));
         lla_msg.latitude    = pvt_soln->lat;
         lla_msg.longitude   = pvt_soln->lon;
         lla_msg.altitude    = pvt_soln->hgt;
         lla_msg.status.status = static_cast<int8_t>(pvt_soln->fix_type);
         lla_msg.status.service = static_cast<uint16_t>(pvt_soln->carr_soln);
-        pub_lla_.publish(lla_msg);
+        pub_lla_->publish(lla_msg);
         return;
     }
     // unsupported message reach here
@@ -352,7 +352,7 @@ std::vector<ObsPtr> UbloxMessageProcessor::parse_meas_msg(const uint8_t *msg_dat
                         halfc != halfc_rec[sat-1][sid-1];
         lock_time_rec[sat-1][sid-1] = lock_time * 1e-3;
         halfc_rec[sat-1][sid-1] = halfc;
-        uint8_t LLI = (slip ? LLI_SLIP : 0) | (!halfv ? LLI_HALFC : 0);
+        uint8_t lli = (slip ? LLI_SLIP : 0) | (!halfv ? LLI_HALFC : 0);
         if (sat2idx.count(sat) == 0)
         {
             ObsPtr obs(new Obs());
@@ -364,8 +364,8 @@ std::vector<ObsPtr> UbloxMessageProcessor::parse_meas_msg(const uint8_t *msg_dat
         ObsPtr obs = obs_meas[sat2idx.at(sat)];
         double freq = sig_freq(sys, sid, static_cast<int>(freq_id)-7);
         obs->freqs.push_back(freq);
-        obs->CN0.push_back(cn0);
-        obs->LLI.push_back(LLI);
+        obs->cn0.push_back(cn0);
+        obs->lli.push_back(lli);
         obs->code.push_back(code);
         obs->psr.push_back(psr);
         obs->psr_std.push_back(0.01*(1<<psr_std));
@@ -640,7 +640,7 @@ int UbloxMessageProcessor::decode_BDS_D2_ephem(EphemPtr ephem)
     pgn5            =getbitu (buff,i+ 42, 4);
     sow5            =getbitu2(buff,i+ 18, 8,i+ 30,12);
     cucp5           =getbitu (buff,i+ 46, 4);
-    ephem->M0       =getbits3(buff,i+ 50, 2,i+ 60,22,i+ 90, 8)*P2_31*SC2RAD;
+    ephem->m0       =getbits3(buff,i+ 50, 2,i+ 60,22,i+ 90, 8)*P2_31*SC2RAD;
     ephem->cus      =getbits2(buff,i+ 98,14,i+120, 4)*P2_31;
     ep5             =getbits (buff,i+124,10);
     
@@ -650,7 +650,7 @@ int UbloxMessageProcessor::decode_BDS_D2_ephem(EphemPtr ephem)
     ep6             =getbitu2(buff,i+ 46, 6,i+ 60,16);
     sqrtA           =getbitu3(buff,i+ 76, 6,i+ 90,22,i+120,4)*P2_19;
     cicp6           =getbits (buff,i+124,10);
-    ephem->A        =sqrtA*sqrtA;
+    ephem->a        =sqrtA*sqrtA;
     
     i=8*38*6; /* page 7 */
     pgn7            =getbitu (buff,i+ 42, 4);
@@ -672,7 +672,7 @@ int UbloxMessageProcessor::decode_BDS_D2_ephem(EphemPtr ephem)
     pgn9            =getbitu (buff,i+ 42, 4);
     sow9            =getbitu2(buff,i+ 18, 8,i+ 30,12);
     OMGdp9          =getbitu (buff,i+ 46, 5);
-    ephem->OMG0     =getbits3(buff,i+ 51, 1,i+ 60,22,i+ 90, 9)*P2_31*SC2RAD;
+    ephem->omg0     =getbits3(buff,i+ 51, 1,i+ 60,22,i+ 90, 9)*P2_31*SC2RAD;
     omgp9           =getbits2(buff,i+ 99,13,i+120,14);
     
     i=8*38*9; /* page 10 */
@@ -705,7 +705,7 @@ int UbloxMessageProcessor::decode_BDS_D2_ephem(EphemPtr ephem)
     ephem->e        = merge_two_s(ep5   ,ep6   ,22)*P2_33;
     ephem->cic      = merge_two_s(cicp6 ,cicp7 , 8)*P2_31;
     ephem->i0       = merge_two_s(i0p7  ,i0p8  ,11)*P2_31*SC2RAD;
-    ephem->OMG_dot  = merge_two_s(OMGdp8,OMGdp9, 5)*P2_43*SC2RAD;
+    ephem->omg_dot  = merge_two_s(OMGdp8,OMGdp9, 5)*P2_43*SC2RAD;
     ephem->omg      = merge_two_s(omgp9 ,omgp10, 5)*P2_31*SC2RAD;
     
     ephem->ttr      = bdt2time(bdt_week,sow1);
@@ -759,14 +759,14 @@ int UbloxMessageProcessor::decode_BDS_D1_ephem(EphemPtr ephem, std::vector<doubl
     sow2            =getbitu2(buff,i+ 18, 8,i+30,12);
     ephem->delta_n  =getbits2(buff,i+ 42,10,i+ 60, 6)*P2_43*SC2RAD;
     ephem->cuc      =getbits2(buff,i+ 66,16,i+ 90, 2)*P2_31;
-    ephem->M0       =getbits2(buff,i+ 92,20,i+120,12)*P2_31*SC2RAD;
+    ephem->m0       =getbits2(buff,i+ 92,20,i+120,12)*P2_31*SC2RAD;
     ephem->e        =getbitu2(buff,i+132,10,i+150,22)*P2_33;
     ephem->cus      =getbits (buff,i+180,18)*P2_31;
     ephem->crc      =getbits2(buff,i+198, 4,i+210,14)*P2_6;
     ephem->crs      =getbits2(buff,i+224, 8,i+240,10)*P2_6;
     sqrtA           =getbitu2(buff,i+250,12,i+270,20)*P2_19;
     toe1            =getbitu (buff,i+290, 2); /* TOE 2-MSB */
-    ephem->A        =sqrtA*sqrtA;
+    ephem->a        =sqrtA*sqrtA;
     
     i=8*38*2; /* subframe 3 */
     frn3            =getbitu (buff,i+ 15, 3);
@@ -774,10 +774,10 @@ int UbloxMessageProcessor::decode_BDS_D1_ephem(EphemPtr ephem, std::vector<doubl
     toe2            =getbitu2(buff,i+ 42,10,i+ 60, 5); /* TOE 5-LSB */
     ephem->i0       =getbits2(buff,i+ 65,17,i+ 90,15)*P2_31*SC2RAD;
     ephem->cic      =getbits2(buff,i+105, 7,i+120,11)*P2_31;
-    ephem->OMG_dot  =getbits2(buff,i+131,11,i+150,13)*P2_43*SC2RAD;
+    ephem->omg_dot  =getbits2(buff,i+131,11,i+150,13)*P2_43*SC2RAD;
     ephem->cis      =getbits2(buff,i+163, 9,i+180, 9)*P2_31;
     ephem->i_dot    =getbits2(buff,i+189,13,i+210, 1)*P2_43*SC2RAD;
-    ephem->OMG0     =getbits2(buff,i+211,21,i+240,11)*P2_31*SC2RAD;
+    ephem->omg0     =getbits2(buff,i+211,21,i+240,11)*P2_31*SC2RAD;
     ephem->omg      =getbits2(buff,i+251,11,i+270,21)*P2_31*SC2RAD;
     toes            =merge_two_u(toe1,toe2,15)*8.0;
     
@@ -885,14 +885,14 @@ int UbloxMessageProcessor::decode_GAL_ephem(EphemPtr ephem)
     type[1]    =getbitu(buff,i, 6);              i+= 6;
     iod_nav[0] =getbitu(buff,i,10);              i+=10;
     toes       =getbitu(buff,i,14)*60.0;         i+=14;
-    ephem->M0  =getbits(buff,i,32)*P2_31*SC2RAD; i+=32;
+    ephem->m0  =getbits(buff,i,32)*P2_31*SC2RAD; i+=32;
     ephem->e   =getbitu(buff,i,32)*P2_33;        i+=32;
     sqrtA      =getbitu(buff,i,32)*P2_19;
     
     i=128*2; /* word type 2 */
     type[2]    =getbitu(buff,i, 6);              i+= 6;
     iod_nav[1] =getbitu(buff,i,10);              i+=10;
-    ephem->OMG0=getbits(buff,i,32)*P2_31*SC2RAD; i+=32;
+    ephem->omg0=getbits(buff,i,32)*P2_31*SC2RAD; i+=32;
     ephem->i0  =getbits(buff,i,32)*P2_31*SC2RAD; i+=32;
     ephem->omg =getbits(buff,i,32)*P2_31*SC2RAD; i+=32;
     ephem->i_dot=getbits(buff,i,14)*P2_43*SC2RAD;
@@ -900,7 +900,7 @@ int UbloxMessageProcessor::decode_GAL_ephem(EphemPtr ephem)
     i=128*3; /* word type 3 */
     type[3]         =getbitu(buff,i, 6);              i+= 6;
     iod_nav[2]      =getbitu(buff,i,10);              i+=10;
-    ephem->OMG_dot  =getbits(buff,i,24)*P2_43*SC2RAD; i+=24;
+    ephem->omg_dot  =getbits(buff,i,24)*P2_43*SC2RAD; i+=24;
     ephem->delta_n  =getbits(buff,i,16)*P2_43*SC2RAD; i+=16;
     ephem->cuc      =getbits(buff,i,16)*P2_29;        i+=16;
     ephem->cus      =getbits(buff,i,16)*P2_29;        i+=16;
@@ -959,7 +959,7 @@ int UbloxMessageProcessor::decode_GAL_ephem(EphemPtr ephem)
         LOG(ERROR) << "decode_gal_inav svid error: svid=" << svid;
         return 0;
     }
-    ephem->A=sqrtA*sqrtA;
+    ephem->a=sqrtA*sqrtA;
     ephem->iode=ephem->iodc=iod_nav[0];
     ephem->health=(e5b_hs<<7)|(e5b_dvs<<6)|(e1b_hs<<1)|e1b_dvs;
     ephem->ttr=gst2time(week,tow);
@@ -1054,24 +1054,24 @@ int UbloxMessageProcessor::decode_GPS_ephem(EphemPtr ephem)
     ephem->iode         = getbitu(frame_buf, off, 8);                   off += 8;
     ephem->crs          = getbits(frame_buf, off, 16) * P2_5;           off += 16;
     ephem->delta_n      = getbits(frame_buf, off, 16) * P2_43*SC2RAD;   off += 16;
-    ephem->M0           = getbits(frame_buf, off, 32) * P2_31*SC2RAD;   off += 32;
+    ephem->m0           = getbits(frame_buf, off, 32) * P2_31*SC2RAD;   off += 32;
     ephem->cuc          = getbits(frame_buf, off, 16) * P2_29;          off += 16;
     ephem->e            = getbitu(frame_buf, off, 32) * P2_33;          off += 32;
     ephem->cus          = getbits(frame_buf, off, 16) * P2_29;          off += 16;
     double sqrtA        = getbitu(frame_buf, off, 32) * P2_19;          off += 32;
     ephem->toe_tow      = getbitu(frame_buf, off, 16) * 16.0;           off += 16;
-    ephem->A            = sqrtA * sqrtA;
+    ephem->a            = sqrtA * sqrtA;
 
     // decode subframe 3
     frame_buf += 30;
     off = 48;
     ephem->cic          = getbits(frame_buf, off, 16) * P2_29;          off += 16;
-    ephem->OMG0         = getbits(frame_buf, off, 32) * P2_31*SC2RAD;   off += 32;
+    ephem->omg0         = getbits(frame_buf, off, 32) * P2_31*SC2RAD;   off += 32;
     ephem->cis          = getbits(frame_buf, off, 16) * P2_29;          off += 16;
     ephem->i0           = getbits(frame_buf, off, 32) * P2_31*SC2RAD;   off += 32;
     ephem->crc          = getbits(frame_buf, off, 16) * P2_5;           off += 16;
     ephem->omg          = getbits(frame_buf, off, 32) * P2_31*SC2RAD;   off += 32;
-    ephem->OMG_dot      = getbits(frame_buf, off, 24) * P2_43*SC2RAD;   off += 24;
+    ephem->omg_dot      = getbits(frame_buf, off, 24) * P2_43*SC2RAD;   off += 24;
     uint32_t iode       = getbitu(frame_buf, off, 8);                   off += 8;
     ephem->i_dot        = getbits(frame_buf, off, 14) * P2_43*SC2RAD;
 

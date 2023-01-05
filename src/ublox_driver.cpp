@@ -28,7 +28,7 @@
 // #include <sys/procmgr.h>
 #include <unistd.h>
 #include <arpa/inet.h>
-#include <ros/ros.h>
+#include "rclcpp/rclcpp.hpp"
 
 #include "parameter_manager.hpp"
 #include "serial_handler.hpp"
@@ -103,8 +103,8 @@ int main(int argc, char **argv)
 
     if (!interrupted.is_lock_free())  return 10;
 
-    ros::init(argc, argv, "ublox_driver");
-    ros::NodeHandle nh("~");
+    rclcpp::init(argc, argv);
+    auto node = rclcpp::Node::make_shared("ublox_driver");
 
     struct sigaction sigIntHandler;
     sigIntHandler.sa_handler = ctrl_c_handler;
@@ -113,8 +113,8 @@ int main(int argc, char **argv)
     sigaction(SIGINT, &sigIntHandler, NULL);
     // procmgr_ability( 0, PROCMGR_AID_CLOCKSET );
 
-    std::string config_filepath;
-    nh.getParam("config_file", config_filepath);
+    node->declare_parameter("config_file", "");
+    std::string config_filepath = node ->get_parameter("my_parameter").get_parameter_value().get<std::string>();
     // config_filepath = argv[1];
     ParameterManager &pm(ParameterManager::getInstance());
     pm.read_parameter(config_filepath);
@@ -126,7 +126,7 @@ int main(int argc, char **argv)
     std::shared_ptr<UbloxMessageProcessor> ublox_msg_processor;
     std::shared_ptr<SerialHandler> output_serial;
     if (pm.to_ros)
-        ublox_msg_processor.reset(new UbloxMessageProcessor(nh));
+        ublox_msg_processor.reset(new UbloxMessageProcessor(node));
     if (pm.to_file)
     {
         const std::string t_str = time_str();
@@ -191,10 +191,10 @@ int main(int argc, char **argv)
         file_loader->startRead();
     }
 
-    ros::Rate loop(50);
-    while (ros::ok() && !interrupted)
+    rclcpp::Rate loop(50);
+    while (rclcpp::ok() && !interrupted)
     {
-        ros::spinOnce();
+        rclcpp::spin_some(node);
         loop.sleep();
     }
 

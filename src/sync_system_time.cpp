@@ -22,8 +22,8 @@
 #include <unistd.h>
 #include <atomic>
 
-#include <ros/ros.h>
-#include <sensor_msgs/NavSatFix.h>
+#include "rclcpp/rclcpp.hpp"
+#include <sensor_msgs/msg/nav_sat_fix.hpp>
 #include <gnss_comm/gnss_utility.hpp>
 #include <gnss_comm/gnss_ros.hpp>
 
@@ -58,9 +58,9 @@ void set_datetime(const gtime_t t, const int timezone)
         std::cerr << "clock setting error: " << strerror(errno);
 }
 
-void receiver_lla_callback(const sensor_msgs::NavSatFixConstPtr &lla_msg)
+void receiver_lla_callback(const sensor_msgs::msg::NavSatFix &lla_msg)
 {
-    const gtime_t time = sec2time(lla_msg->header.stamp.toSec());
+    const gtime_t time = sec2time(lla_msg.header.stamp.sec);
     if (time.time != 0)
     {
         set_datetime(time, UTC_OFFSET);
@@ -70,14 +70,16 @@ void receiver_lla_callback(const sensor_msgs::NavSatFixConstPtr &lla_msg)
 
 int main(int argc, char **argv)
 {
-    ros::init(argc, argv, "set_system_time");
-    ros::NodeHandle n("~");
-    ros::Subscriber sub_lla = n.subscribe("/ublox_driver/receiver_lla", 10, receiver_lla_callback);
+    rclcpp::init(argc, argv);
+    auto node = rclcpp::Node::make_shared("set_system_time");
 
-    ros::Rate rate(1);
+    auto subscription_ = node->create_subscription<sensor_msgs::msg::NavSatFix>(
+      "/ublox_driver/receiver_lla", 10, receiver_lla_callback);
+
+    rclcpp::Rate rate(1);
     while(!done)
     {
-        ros::spinOnce();
+        rclcpp::spin_some(node);
         rate.sleep();
     }
     std::cout << "System time updated" << std::endl;

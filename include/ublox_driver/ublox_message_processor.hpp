@@ -22,8 +22,8 @@
 #define UBLOX_MESSAGE_PROCESSOR_HPP_
 
 #include <map>
-#include <ros/ros.h>
-#include <sensor_msgs/NavSatFix.h>
+#include "rclcpp/rclcpp.hpp"
+#include <sensor_msgs/msg/nav_sat_fix.hpp>
 #include <glog/logging.h>
 #include <gnss_comm/gnss_constant.hpp>
 #include <gnss_comm/gnss_utility.hpp>
@@ -36,7 +36,7 @@ using namespace gnss_comm;
 class UbloxMessageProcessor
 {
     public:
-        UbloxMessageProcessor(ros::NodeHandle &nh);
+        UbloxMessageProcessor(rclcpp::Node::SharedPtr &node);
         void process_data(const uint8_t *data, size_t len);
 
         // check ack message, 1:ack, -1:not-ack, 0:not-received-yet
@@ -120,10 +120,14 @@ class UbloxMessageProcessor
         uint8_t halfc_rec[MAX_SAT][N_FREQ];    /* half-cycle add flag */
         uint8_t subfrm[MAX_SAT][380];     /* subframe buffer */
         gtime_t curr_time;
-        ros::NodeHandle nh_;
-        ros::Publisher pub_pvt_, pub_lla_;
-        ros::Publisher pub_tp_info_;
-        ros::Publisher pub_range_meas_, pub_ephem_, pub_glo_ephem_, pub_iono_;
+        rclcpp::Node::SharedPtr node_;
+        rclcpp::Publisher<gnss_interfaces::msg::GnssPVTSolnMsg>::SharedPtr pub_pvt_;
+        rclcpp::Publisher<sensor_msgs::msg::NavSatFix>::SharedPtr pub_lla_;
+        rclcpp::Publisher<gnss_interfaces::msg::GnssTimePulseInfoMsg>::SharedPtr pub_tp_info_;
+        rclcpp::Publisher<gnss_interfaces::msg::GnssMeasMsg>::SharedPtr pub_range_meas_;
+        rclcpp::Publisher<gnss_interfaces::msg::GnssEphemMsg>::SharedPtr pub_ephem_;
+        rclcpp::Publisher<gnss_interfaces::msg::GnssGloEphemMsg>::SharedPtr pub_glo_ephem_;
+        rclcpp::Publisher<gnss_interfaces::msg::StampedFloat64Array>::SharedPtr pub_iono_;
         const uint32_t MSG_HEADER_LEN;
 
         static constexpr uint8_t UBX_SYNC_1 = 0xB5;        // ubx message sync code 1
